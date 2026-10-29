@@ -18,34 +18,34 @@
 
 <p id="msg"></p>
 
-<!-- ===== ЭКРАН 1 и 2: АВТОРИЗАЦИЯ + РЕГИСТРАЦИЯ + OAUTH ===== -->
+<!-- ===== ВХОД / РЕГИСТРАЦИЯ через ВАШУ таблицу users ===== -->
 <div id="authPanel">
   <h2>Вход</h2>
   <div class="card">
-    <input type="username" id="loginUsername" placeholder="Имя"><br>
+    <input type="text" id="loginUser" placeholder="Username"><br>
     <input type="password" id="loginPass" placeholder="Пароль"><br>
-    <button onclick="loginEmail()">Авторизация</button>
+    <button onclick="loginLocal()">Авторизация</button>
   </div>
 
   <h2>Регистрация</h2>
   <div class="card">
-    <input type="username" id="regUsername" placeholder="Имя"><br>
+    <input type="text" id="regUser" placeholder="Username"><br>
     <input type="password" id="regPass" placeholder="Пароль"><br>
-    <button onclick="registerEmail()">Регистрация</button>
+    <button onclick="registerLocal()">Регистрация</button>
   </div>
 
   <h2>Вход через провайдеров</h2>
   <div class="card">
-    <!-- Через Supabase -->
     <button class="oauth-btn" onclick="oauth('github')">Войти через GitHub</button><br>
+    <button class="oauth-btn" onclick="oauth('google')">Войти через Google</button><br>
+    <button class="oauth-btn" onclick="oauth('apple')">Войти через Apple</button><br>
     <hr>
-    <!-- Вручную (Implicit Flow) -->
     <button class="oauth-btn" onclick="vkLogin()">Войти через VK</button><br>
     <button class="oauth-btn" onclick="yandexLogin()">Войти через Яндекс</button>
   </div>
 </div>
 
-<!-- ===== ЭКРАН 3: РАБОТА С ТАБЛИЦЕЙ ===== -->
+<!-- ===== КАБИНЕТ: CRUD corporations ===== -->
 <div id="appPanel" style="display:none">
   <h2>Кабинет: <span id="whoami"></span>
     <button onclick="logout()">Выйти</button>
@@ -53,9 +53,9 @@
 
   <div class="card">
     <h3 id="formTitle">Добавить организацию</h3>
-    <input type="text" id="corpName" placeholder="Название"><br>
-    <input type="text" id="corpActivity" placeholder="Деятельность"><br>
-    <input type="number" id="corpYear" placeholder="Год основания"><br>
+    <input type="text" id="corpName" placeholder="Название (name)"><br>
+    <input type="text" id="corpActivity" placeholder="Деятельность (activity)"><br>
+    <input type="number" id="corpYear" placeholder="Год основания (year_of_foundation)"><br>
     <button id="saveBtn" onclick="saveCorp()">Добавить</button>
     <button onclick="cancelEdit()" id="cancelBtn" style="display:none">Отмена</button>
   </div>
@@ -67,199 +67,180 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ================= КОНФИГ =================
-const SUPABASE_URL = 'https://lzuiudntsxcorceiriqa.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_dT4ixQgQjDctJucWPDTjAw_mWT_Q0ZA';
-const VK_APP_ID    = '00000000';   // ⚠️ вставьте App ID вашего VK-приложения
-const YANDEX_APP_ID = 'xxxxxxxx';  // ⚠️ вставьте App ID вашего Яндекс-приложения
-const REDIRECT_URI = location.origin + location.pathname; // куда вернёт провайдер
+const SUPABASE_URL  = 'https://lzuiudntsxcorceiriqa.supabase.co';
+const SUPABASE_KEY  = 'sb_publishable_dT4ixQgQjDctJucWPDTjAw_mWT_Q0ZA';
+const VK_APP_ID     = '00000000';   // ⚠️ числовой ID приложения VK
+const YANDEX_APP_ID = 'e282d02bec71452bb88fd995aa6814ba';   // ⚠️ числовой ID приложения Яндекс
+const REDIRECT_URI  = location.origin + location.pathname;
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
 let corpsCache = [];
 let editingId = null;
 
-// ================= ХЕЛПЕРЫ =================
-function showMsg(text, cls) {
-  const m = document.getElementById('msg');
-  m.textContent = text;
-  m.className = cls || '';
-}
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function showMsg(t, c){ const m = document.getElementById('msg'); m.textContent = t; m.className = c || ''; }
+function escapeHtml(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// Хеширование пароля SHA-256 (встроенный браузерный API, pure JS)
+async function sha256(text){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
-// ================= ЭКРАН 1: ВХОД / ЭКРАН 2: РЕГИСТРАЦИЯ =================
-async function loginEmail() {
-  const { error } = await db.auth.signInWithPassword({
-    email: document.getElementById('loginEmail').value,
-    password: document.getElementById('loginPass').value
-  });
-  if (error) return showMsg('Ошибка входа: ' + error.message, 'err');
-  init();
-}
+// ===== РЕГИСТРАЦИЯ через ВАШУ таблицу users =====
+async function registerLocal(){
+  const username = document.getElementById('regUser').value.trim();
+  const password = document.getElementById('regPass').value;
+  if (!username || !password) return showMsg('Заполните оба поля!', 'err');
 
-async function registerEmail() {
-  const { data, error } = await db.auth.signUp({
-    email: document.getElementById('regEmail').value,
-    password: document.getElementById('regPass').value
-  });
+  // проверяем, не занят ли username
+  const { data: exists } = await db.from('users').select('id').eq('username', username).limit(1);
+  if (exists && exists.length) return showMsg('Такой username уже занят!', 'err');
+
+  const hash = await sha256(password);
+  const { error } = await db.from('users').insert([{ username, password: hash }]); // id не передаём!
   if (error) return showMsg('Ошибка регистрации: ' + error.message, 'err');
-  showMsg('✅ Регистрация успешна! Проверьте почту для подтверждения.', 'ok');
+  showMsg('✅ Регистрация успешна! Теперь войдите.', 'ok');
 }
 
-// ================= GITHUB / GOOGLE / APPLE (через Supabase) =================
-async function oauth(provider) {
-  const { error } = await db.auth.signInWithOAuth({
-    provider: provider, // 'github' | 'google' | 'apple'
-    options: { redirectTo: REDIRECT_URI }
-  });
+// ===== ВХОД через ВАШУ таблицу users =====
+async function loginLocal(){
+  const username = document.getElementById('loginUser').value.trim();
+  const password = document.getElementById('loginPass').value;
+  if (!username || !password) return showMsg('Заполните оба поля!', 'err');
+
+  const { data, error } = await db.from('users').select('*').eq('username', username).limit(1);
+  if (error) return showMsg('Ошибка: ' + error.message, 'err');
+  if (!data || !data.length) return showMsg('Пользователь не найден!', 'err');
+
+  const hash = await sha256(password);
+  if (data[0].password !== hash) return showMsg('Неверный пароль!', 'err');
+
+  setManualSession('local', username, data[0].id, null);
+}
+
+// ===== GITHUB / GOOGLE / APPLE через Supabase =====
+async function oauth(provider){
+  const { error } = await db.auth.signInWithOAuth({ provider, options: { redirectTo: REDIRECT_URI } });
   if (error) showMsg('OAuth ошибка: ' + error.message, 'err');
-  // при успехе браузер сам уйдёт на страницу провайдера
 }
 
-// ================= VK / ЯНДЕКС (вручную, Implicit Flow) =================
-function vkLogin() {
-  location.href = 'https://oauth.vk.com/authorize'
-    + '?client_id=' + VK_APP_ID
+// ===== VK / ЯНДЕКС вручную =====
+function vkLogin(){
+  location.href = 'https://oauth.vk.com/authorize?client_id=' + VK_APP_ID
     + '&redirect_uri=' + encodeURIComponent(REDIRECT_URI)
     + '&response_type=token&v=5.199&display=page&state=vk';
 }
-
-function yandexLogin() {
-  location.href = 'https://oauth.yandex.ru/authorize'
-    + '?response_type=token'
-    + '&client_id=' + YANDEX_APP_ID
-    + '&redirect_uri=' + encodeURIComponent(REDIRECT_URI)
-    + '&state=yandex';
+function yandexLogin(){
+  location.href = 'https://oauth.yandex.ru/authorize?response_type=token&client_id=' + YANDEX_APP_ID
+    + '&redirect_uri=' + encodeURIComponent(REDIRECT_URI) + '&state=yandex';
 }
 
-// Обработка возврата от VK/Яндекс: токен приходит в #access_token=...
-(function handleOAuthCallback() {
+(function handleOAuthCallback(){
   if (!location.hash) return;
   const p = new URLSearchParams(location.hash.slice(1));
-  const token = p.get('access_token');
-  const state = p.get('state');
+  const token = p.get('access_token'), state = p.get('state');
   if (!token || (state !== 'vk' && state !== 'yandex')) return;
-
-  history.replaceState(null, '', location.pathname + location.search); // чистим URL
-
+  history.replaceState(null, '', location.pathname + location.search);
   if (state === 'vk') vkProfile(token, p.get('user_id'));
   else yandexProfile(token);
 })();
 
-// VK: профиль получаем через JSONP (api.vk.com не любит CORS, а JSONP работает всегда)
-function vkProfile(token, userId) {
-  const cbName = 'vkCb_' + Date.now();
+function vkProfile(token, userId){
+  const cb = 'vkCb_' + Date.now();
   const s = document.createElement('script');
-  window[cbName] = (resp) => {
-    delete window[cbName]; s.remove();
-    const u = resp.response && resp.response[0];
-    setManualSession('vk', u ? (u.first_name + ' ' + u.last_name) : ('VK user #' + userId), userId, token);
+  window[cb] = r => { delete window[cb]; s.remove();
+    const u = r.response && r.response[0];
+    setManualSession('vk', u ? u.first_name + ' ' + u.last_name : 'VK user #' + userId, userId, token);
   };
-  s.onerror = () => { delete window[cbName]; s.remove(); setManualSession('vk', 'VK user #' + userId, userId, token); };
-  s.src = 'https://api.vk.com/method/users.get?user_ids=' + userId
-        + '&fields=photo_100&access_token=' + token + '&v=5.199&callback=' + cbName;
+  s.onerror = () => { delete window[cb]; s.remove(); setManualSession('vk', 'VK user #' + userId, userId, token); };
+  s.src = 'https://api.vk.com/method/users.get?user_ids=' + userId + '&access_token=' + token + '&v=5.199&callback=' + cb;
   document.body.appendChild(s);
 }
 
-// Яндекс: профиль через fetch
-async function yandexProfile(token) {
+async function yandexProfile(token){
   try {
     const r = await fetch('https://login.yandex.ru/info?format=json&oauth_token=' + token);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const p = await r.json();
     setManualSession('yandex', p.display_name || p.login || p.default_email || 'Яндекс пользователь', p.id, token);
-  } catch (e) {
-    // Если CORS заблокировал запрос профиля — токен всё равно доказывает вход
-    showMsg('Яндекс: вход выполнен, но запрос профиля заблокирован CORS: ' + e.message, 'err');
+  } catch(e){
     setManualSession('yandex', 'Яндекс пользователь', 'unknown', token);
   }
 }
 
-function setManualSession(provider, name, id, token) {
+function setManualSession(provider, name, id, token){
   localStorage.setItem('manual_session', JSON.stringify({ provider, name, id, token }));
   init();
 }
 
-// ================= СЕССИЯ И ПЕРЕКЛЮЧЕНИЕ ЭКРАНОВ =================
-async function init() {
-  // 1) Сначала сессия Supabase (email, github, google, apple)
-  const { data } = await db.auth.getSession();
-  if (data.session) {
+// ===== СЕССИЯ / ЭКРАНЫ =====
+async function init(){
+  const { data } = await db.auth.getSession();          // сессии GitHub/Google/Apple
+  if (data.session){
     const u = data.session.user;
-    render({
-      name: u.user_metadata?.full_name || u.user_metadata?.name || u.email,
-      provider: u.app_metadata?.provider || 'email'
-    });
+    render({ name: u.user_metadata?.full_name || u.user_metadata?.user_name || u.email,
+             provider: u.app_metadata?.provider || 'oauth' });
     return;
   }
-  // 2) Иначе ручная сессия (vk / yandex)
-  const ms = JSON.parse(localStorage.getItem('manual_session') || 'null');
-  render(ms);
+  render(JSON.parse(localStorage.getItem('manual_session') || 'null')); // local / vk / yandex
 }
 
-function render(user) {
+function render(user){
   document.getElementById('authPanel').style.display = user ? 'none' : 'block';
   document.getElementById('appPanel').style.display  = user ? 'block' : 'none';
-  if (user) {
+  if (user){
     document.getElementById('whoami').textContent = user.name + ' (' + user.provider + ')';
     loadCorps();
   }
 }
 
-async function logout() {
+async function logout(){
   await db.auth.signOut();
   localStorage.removeItem('manual_session');
   render(null);
-  showMsg('Вы вышли из системы.');
+  showMsg('Вы вышли.');
 }
 
-// ================= ЭКРАН 3: CRUD ТАБЛИЦЫ corporations =================
-async function loadCorps() {
-  const container = document.getElementById('corpsContainer');
+// ===== CRUD corporations (id НЕ передаём — он serial) =====
+async function loadCorps(){
+  const box = document.getElementById('corpsContainer');
   const { data, error } = await db.from('corporations').select('*').order('id');
-  if (error) { container.innerHTML = '<span class="err">Ошибка: ' + error.message + '</span>'; return; }
+  if (error){ box.innerHTML = '<span class="err">' + error.message + '</span>'; return; }
   corpsCache = data || [];
-  if (!corpsCache.length) { container.innerHTML = '<i>Пока пусто</i>'; return; }
-
-  container.innerHTML = '';
+  if (!corpsCache.length){ box.innerHTML = '<i>Пока пусто</i>'; return; }
+  box.innerHTML = '';
   corpsCache.forEach(c => {
-    const div = document.createElement('div');
-    div.className = 'corp-item';
-    div.innerHTML =
-      '<strong>' + escapeHtml(c.name) + '</strong> — ' + escapeHtml(c.activity || '—') +
-      ' (' + escapeHtml(c.year_of_foundation ?? '—') + ') ' +
-      '<button onclick="editCorp(' + c.id + ')">✏️ Ред.</button> ' +
-      '<button onclick="deleteCorp(' + c.id + ')">🗑 Удалить</button>';
-    container.appendChild(div);
+    const d = document.createElement('div');
+    d.className = 'corp-item';
+    d.innerHTML = '<strong>' + escapeHtml(c.name) + '</strong> — ' + escapeHtml(c.activity || '—')
+      + ' (' + escapeHtml(c.year_of_foundation ?? '—') + ') '
+      + '<button onclick="editCorp(' + c.id + ')">✏️</button> '
+      + '<button onclick="deleteCorp(' + c.id + ')">🗑</button>';
+    box.appendChild(d);
   });
 }
 
-async function saveCorp() {
+async function saveCorp(){
   const name = document.getElementById('corpName').value.trim();
   const activity = document.getElementById('corpActivity').value.trim();
   const year = parseInt(document.getElementById('corpYear').value) || null;
   if (!name) return showMsg('Введите название!', 'err');
 
   let error;
-  if (editingId) {
+  if (editingId){
     ({ error } = await db.from('corporations')
-      .update({ name, activity, year_of_foundation: year })
-      .eq('id', editingId));
+      .update({ name, activity, year_of_foundation: year }).eq('id', editingId));
   } else {
     ({ error } = await db.from('corporations')
-      .insert([{ name, activity, year_of_foundation: year }]));
+      .insert([{ name, activity, year_of_foundation: year }]));   // без id!
   }
   if (error) return showMsg('Ошибка сохранения: ' + error.message, 'err');
-
   showMsg(editingId ? '✅ Обновлено!' : '✅ Добавлено!', 'ok');
-  cancelEdit();
-  loadCorps();
+  cancelEdit(); loadCorps();
 }
 
-function editCorp(id) {
-  const c = corpsCache.find(x => x.id === id);
-  if (!c) return;
+function editCorp(id){
+  const c = corpsCache.find(x => x.id === id); if (!c) return;
   editingId = id;
   document.getElementById('corpName').value = c.name || '';
   document.getElementById('corpActivity').value = c.activity || '';
@@ -268,28 +249,22 @@ function editCorp(id) {
   document.getElementById('saveBtn').textContent = 'Сохранить';
   document.getElementById('cancelBtn').style.display = 'inline';
 }
-
-function cancelEdit() {
+function cancelEdit(){
   editingId = null;
-  document.getElementById('corpName').value = '';
-  document.getElementById('corpActivity').value = '';
-  document.getElementById('corpYear').value = '';
+  ['corpName','corpActivity','corpYear'].forEach(i => document.getElementById(i).value = '');
   document.getElementById('formTitle').textContent = 'Добавить организацию';
   document.getElementById('saveBtn').textContent = 'Добавить';
   document.getElementById('cancelBtn').style.display = 'none';
 }
-
-async function deleteCorp(id) {
+async function deleteCorp(id){
   const c = corpsCache.find(x => x.id === id);
   if (!confirm('Удалить "' + (c?.name || id) + '"?')) return;
   const { error } = await db.from('corporations').delete().eq('id', id);
   if (error) return showMsg('Ошибка удаления: ' + error.message, 'err');
-  showMsg('🗑 Удалено.', 'ok');
-  loadCorps();
+  showMsg('🗑 Удалено.', 'ok'); loadCorps();
 }
 
-// ================= СТАРТ =================
 init();
 </script>
 </body>
-</h
+</html>
