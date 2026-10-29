@@ -2,62 +2,96 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>Corporations + OAuth</title>
+<title>Corporations</title>
 <style>
   body { font-family: sans-serif; margin: 40px; max-width: 700px; }
-  input, button { padding: 8px; margin: 4px 0; font-size: 15px; }
-  button { cursor: pointer; }
-  .oauth-btn { width: 220px; margin: 3px; }
-  .card { border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin: 10px 0; }
-  .corp-item { background: #f5f5f5; padding: 10px; margin: 6px 0; border-radius: 6px; border-left: 4px solid #3ecf8e; }
-  #msg { font-weight: bold; min-height: 22px; }
+  input, button { padding: 8px; margin: 4px 0; font-size: 15px; width: 100%; box-sizing: border-box; }
+  button { cursor: pointer; background: #3ecf8e; color: white; border: none; border-radius: 5px; }
+  button:hover { background: #38b980; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 10px 0; }
+  .corp-item { background: #f5f5f5; padding: 10px; margin: 6px 0; border-radius: 6px; border-left: 4px solid #3ecf8e; display: flex; justify-content: space-between; align-items: center; }
+  .corp-item button { width: auto; margin-left: 5px; padding: 4px 10px; font-size: 14px; }
+  #msg { font-weight: bold; min-height: 22px; margin-bottom: 10px; }
   .err { color: red; } .ok { color: green; }
+
+  /* Ссылка-переключатель между входом/регистрацией */
+  .switch { margin-top: 15px; text-align: center; font-size: 14px; color: #666; }
+  .switch a { color: #3ecf8e; cursor: pointer; text-decoration: underline; }
+  .switch a:hover { color: #38b980; }
+
+  /* OAuth-блок: неброский, под формой */
+  .oauth-block {
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+    text-align: center;
+    font-size: 13px;
+    color: #888;
+  }
+  .oauth-block a {
+    color: #555;
+    text-decoration: none;
+    border: 1px solid #ccc;
+    padding: 5px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin: 0 3px;
+    background: #fff;
+    font-size: 13px;
+  }
+  .oauth-block a:hover { background: #f5f5f5; border-color: #999; }
 </style>
 </head>
 <body>
 
 <p id="msg"></p>
 
-<!-- ===== ВХОД / РЕГИСТРАЦИЯ через ВАШУ таблицу users ===== -->
+<!-- ===== АВТОРИЗАЦИЯ / РЕГИСТРАЦИЯ ===== -->
 <div id="authPanel">
-  <h2>Вход</h2>
-  <div class="card">
-    <input type="text" id="loginUser" placeholder="Username"><br>
-    <input type="password" id="loginPass" placeholder="Пароль"><br>
-    <button onclick="loginLocal()">Авторизация</button>
+  <!-- Форма входа -->
+  <div id="loginBox" class="card">
+    <h2 style="margin-top:0">Вход</h2>
+    <input type="text" id="loginUser" placeholder="Username">
+    <input type="password" id="loginPass" placeholder="Пароль">
+    <button onclick="loginLocal()">Войти</button>
+
+    <p class="switch">
+      Нет аккаунта? <a onclick="showRegister()">Зарегистрироваться</a>
+    </p>
+
+    <div class="oauth-block">
+      Или войдите через:
+      <a onclick="oauth('github')">GitHub</a>
+      <a onclick="yandexLogin()">Яндекс</a>
+    </div>
   </div>
 
-  <h2>Регистрация</h2>
-  <div class="card">
-    <input type="text" id="regUser" placeholder="Username"><br>
-    <input type="password" id="regPass" placeholder="Пароль"><br>
-    <button onclick="registerLocal()">Регистрация</button>
-  </div>
+  <!-- Форма регистрации -->
+  <div id="registerBox" class="card" style="display:none">
+    <h2 style="margin-top:0">Регистрация</h2>
+    <input type="text" id="regUser" placeholder="Username">
+    <input type="password" id="regPass" placeholder="Пароль">
+    <button onclick="registerLocal()">Создать аккаунт</button>
 
-  <h2>Вход через провайдеров</h2>
-  <div class="card">
-    <button class="oauth-btn" onclick="oauth('github')">Войти через GitHub</button><br>
-    <button class="oauth-btn" onclick="oauth('google')">Войти через Google</button><br>
-    <button class="oauth-btn" onclick="oauth('apple')">Войти через Apple</button><br>
-    <hr>
-    <button class="oauth-btn" onclick="vkLogin()">Войти через VK</button><br>
-    <button class="oauth-btn" onclick="yandexLogin()">Войти через Яндекс</button>
+    <p class="switch">
+      Уже есть аккаунт? <a onclick="showLogin()">Войти</a>
+    </p>
   </div>
 </div>
 
-<!-- ===== КАБИНЕТ: CRUD corporations ===== -->
+<!-- ===== КАБИНЕТ ===== -->
 <div id="appPanel" style="display:none">
   <h2>Кабинет: <span id="whoami"></span>
-    <button onclick="logout()">Выйти</button>
+    <button onclick="logout()" style="width:auto; float:right; padding:6px 12px">Выйти</button>
   </h2>
 
   <div class="card">
-    <h3 id="formTitle">Добавить организацию</h3>
-    <input type="text" id="corpName" placeholder="Название (name)"><br>
-    <input type="text" id="corpActivity" placeholder="Деятельность (activity)"><br>
-    <input type="number" id="corpYear" placeholder="Год основания (year_of_foundation)"><br>
+    <h3 id="formTitle" style="margin-top:0">Добавить организацию</h3>
+    <input type="text" id="corpName" placeholder="Название (name)">
+    <input type="text" id="corpActivity" placeholder="Деятельность (activity)">
+    <input type="number" id="corpYear" placeholder="Год основания (year_of_foundation)">
     <button id="saveBtn" onclick="saveCorp()">Добавить</button>
-    <button onclick="cancelEdit()" id="cancelBtn" style="display:none">Отмена</button>
+    <button onclick="cancelEdit()" id="cancelBtn" style="display:none; background:#999; margin-top:5px">Отмена</button>
   </div>
 
   <h3>Список организаций</h3>
@@ -69,8 +103,7 @@
 // ================= КОНФИГ =================
 const SUPABASE_URL  = 'https://lzuiudntsxcorceiriqa.supabase.co';
 const SUPABASE_KEY  = 'sb_publishable_dT4ixQgQjDctJucWPDTjAw_mWT_Q0ZA';
-const VK_APP_ID     = '00000000';   // ⚠️ числовой ID приложения VK
-const YANDEX_APP_ID = 'e282d02bec71452bb88fd995aa6814ba';   // ⚠️ числовой ID приложения Яндекс
+const YANDEX_APP_ID = 'e282d02bec71452bb88fd995aa6814ba';
 const REDIRECT_URI  = location.origin + location.pathname;
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -80,29 +113,46 @@ let editingId = null;
 function showMsg(t, c){ const m = document.getElementById('msg'); m.textContent = t; m.className = c || ''; }
 function escapeHtml(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-// Хеширование пароля SHA-256 (встроенный браузерный API, pure JS)
 async function sha256(text){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
-// ===== РЕГИСТРАЦИЯ через ВАШУ таблицу users =====
+// ===== Переключение форм =====
+function showRegister(){
+  document.getElementById('loginBox').style.display = 'none';
+  document.getElementById('registerBox').style.display = 'block';
+  showMsg('');
+}
+function showLogin(){
+  document.getElementById('registerBox').style.display = 'none';
+  document.getElementById('loginBox').style.display = 'block';
+  showMsg('');
+}
+
+// ===== РЕГИСТРАЦИЯ: после успеха сразу логиним =====
 async function registerLocal(){
   const username = document.getElementById('regUser').value.trim();
   const password = document.getElementById('regPass').value;
   if (!username || !password) return showMsg('Заполните оба поля!', 'err');
 
-  // проверяем, не занят ли username
   const { data: exists } = await db.from('users').select('id').eq('username', username).limit(1);
   if (exists && exists.length) return showMsg('Такой username уже занят!', 'err');
 
   const hash = await sha256(password);
-  const { error } = await db.from('users').insert([{ username, password: hash }]); // id не передаём!
+  const { error } = await db.from('users').insert([{ username, password: hash }]);
   if (error) return showMsg('Ошибка регистрации: ' + error.message, 'err');
-  showMsg('✅ Регистрация успешна! Теперь войдите.', 'ok');
+
+  // Сразу авторизуем: берём id только что созданного пользователя
+  const { data: created } = await db.from('users').select('id').eq('username', username).limit(1);
+  if (created && created.length){
+    setManualSession('local', username, created[0].id, null);
+  } else {
+    showMsg('✅ Регистрация успешна! Войдите.', 'ok');
+  }
 }
 
-// ===== ВХОД через ВАШУ таблицу users =====
+// ===== ВХОД =====
 async function loginLocal(){
   const username = document.getElementById('loginUser').value.trim();
   const password = document.getElementById('loginPass').value;
@@ -118,44 +168,27 @@ async function loginLocal(){
   setManualSession('local', username, data[0].id, null);
 }
 
-// ===== GITHUB / GOOGLE / APPLE через Supabase =====
+// ===== GITHUB через Supabase OAuth =====
 async function oauth(provider){
   const { error } = await db.auth.signInWithOAuth({ provider, options: { redirectTo: REDIRECT_URI } });
   if (error) showMsg('OAuth ошибка: ' + error.message, 'err');
 }
 
-// ===== VK / ЯНДЕКС вручную =====
-function vkLogin(){
-  location.href = 'https://oauth.vk.com/authorize?client_id=' + VK_APP_ID
-    + '&redirect_uri=' + encodeURIComponent(REDIRECT_URI)
-    + '&response_type=token&v=5.199&display=page&state=vk';
-}
+// ===== ЯНДЕКС вручную =====
 function yandexLogin(){
   location.href = 'https://oauth.yandex.ru/authorize?response_type=token&client_id=' + YANDEX_APP_ID
     + '&redirect_uri=' + encodeURIComponent(REDIRECT_URI) + '&state=yandex';
 }
 
+// Обработка возврата с Яндекса (#access_token=...)
 (function handleOAuthCallback(){
   if (!location.hash) return;
   const p = new URLSearchParams(location.hash.slice(1));
   const token = p.get('access_token'), state = p.get('state');
-  if (!token || (state !== 'vk' && state !== 'yandex')) return;
+  if (!token || state !== 'yandex') return;
   history.replaceState(null, '', location.pathname + location.search);
-  if (state === 'vk') vkProfile(token, p.get('user_id'));
-  else yandexProfile(token);
+  yandexProfile(token);
 })();
-
-function vkProfile(token, userId){
-  const cb = 'vkCb_' + Date.now();
-  const s = document.createElement('script');
-  window[cb] = r => { delete window[cb]; s.remove();
-    const u = r.response && r.response[0];
-    setManualSession('vk', u ? u.first_name + ' ' + u.last_name : 'VK user #' + userId, userId, token);
-  };
-  s.onerror = () => { delete window[cb]; s.remove(); setManualSession('vk', 'VK user #' + userId, userId, token); };
-  s.src = 'https://api.vk.com/method/users.get?user_ids=' + userId + '&access_token=' + token + '&v=5.199&callback=' + cb;
-  document.body.appendChild(s);
-}
 
 async function yandexProfile(token){
   try {
@@ -175,14 +208,14 @@ function setManualSession(provider, name, id, token){
 
 // ===== СЕССИЯ / ЭКРАНЫ =====
 async function init(){
-  const { data } = await db.auth.getSession();          // сессии GitHub/Google/Apple
+  const { data } = await db.auth.getSession();
   if (data.session){
     const u = data.session.user;
     render({ name: u.user_metadata?.full_name || u.user_metadata?.user_name || u.email,
              provider: u.app_metadata?.provider || 'oauth' });
     return;
   }
-  render(JSON.parse(localStorage.getItem('manual_session') || 'null')); // local / vk / yandex
+  render(JSON.parse(localStorage.getItem('manual_session') || 'null'));
 }
 
 function render(user){
@@ -191,6 +224,10 @@ function render(user){
   if (user){
     document.getElementById('whoami').textContent = user.name + ' (' + user.provider + ')';
     loadCorps();
+  } else {
+    // По возвращении на экран авторизации — показываем форму входа
+    document.getElementById('loginBox').style.display = 'block';
+    document.getElementById('registerBox').style.display = 'none';
   }
 }
 
@@ -201,7 +238,7 @@ async function logout(){
   showMsg('Вы вышли.');
 }
 
-// ===== CRUD corporations (id НЕ передаём — он serial) =====
+// ===== CRUD corporations =====
 async function loadCorps(){
   const box = document.getElementById('corpsContainer');
   const { data, error } = await db.from('corporations').select('*').order('id');
@@ -212,10 +249,13 @@ async function loadCorps(){
   corpsCache.forEach(c => {
     const d = document.createElement('div');
     d.className = 'corp-item';
-    d.innerHTML = '<strong>' + escapeHtml(c.name) + '</strong> — ' + escapeHtml(c.activity || '—')
-      + ' (' + escapeHtml(c.year_of_foundation ?? '—') + ') '
-      + '<button onclick="editCorp(' + c.id + ')">✏️</button> '
-      + '<button onclick="deleteCorp(' + c.id + ')">🗑</button>';
+    d.innerHTML =
+      '<div><strong>' + escapeHtml(c.name) + '</strong> — ' + escapeHtml(c.activity || '—') +
+      ' (' + escapeHtml(c.year_of_foundation ?? '—') + ')</div>' +
+      '<div>' +
+        '<button onclick="editCorp(' + c.id + ')">✏️</button>' +
+        '<button onclick="deleteCorp(' + c.id + ')" style="background:#e74c3c">🗑</button>' +
+      '</div>';
     box.appendChild(d);
   });
 }
@@ -232,7 +272,7 @@ async function saveCorp(){
       .update({ name, activity, year_of_foundation: year }).eq('id', editingId));
   } else {
     ({ error } = await db.from('corporations')
-      .insert([{ name, activity, year_of_foundation: year }]));   // без id!
+      .insert([{ name, activity, year_of_foundation: year }]));
   }
   if (error) return showMsg('Ошибка сохранения: ' + error.message, 'err');
   showMsg(editingId ? '✅ Обновлено!' : '✅ Добавлено!', 'ok');
@@ -247,7 +287,7 @@ function editCorp(id){
   document.getElementById('corpYear').value = c.year_of_foundation ?? '';
   document.getElementById('formTitle').textContent = 'Редактирование #' + id;
   document.getElementById('saveBtn').textContent = 'Сохранить';
-  document.getElementById('cancelBtn').style.display = 'inline';
+  document.getElementById('cancelBtn').style.display = 'inline-block';
 }
 function cancelEdit(){
   editingId = null;
